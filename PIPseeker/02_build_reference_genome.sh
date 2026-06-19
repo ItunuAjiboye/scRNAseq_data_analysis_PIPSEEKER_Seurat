@@ -1,7 +1,4 @@
 # =============================================================================
-# STEP 2 — Build Reference Genome
-# =============================================================================
-# =============================================================================
 # STEP 1 — Download Reference Genome and GTF file from EMBL
 # =============================================================================
 
@@ -20,6 +17,10 @@ gunzip Ovis_aries.ARS-UI_Ramb_v3.0.dna.toplevel.fa.gz
 gunzip Ovis_aries.ARS-UI_Ramb_v3.0.116.gtf.gz
 
 echo "Reference genome and GTF file downloaded successfully"
+
+# =============================================================================
+# STEP 2 — Build Reference Genome
+# =============================================================================
 echo "Building reference genome..."
 
 # Define paths — update these to match your directory structure

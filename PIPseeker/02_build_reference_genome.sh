@@ -2,17 +2,17 @@
 # STEP 2 — Build Reference Genome
 # =============================================================================
 # =============================================================================
-# STEP 2 — Download Reference Genome and GTF file from EMBL
+# STEP 1 — Download Reference Genome and GTF file from EMBL
 # =============================================================================
 
 # Create a directory for the reference genome
 mkdir ~/reference_genome
 cd ~/reference_genome
 
-# Download the sheep (Ovis aries) reference genome (FASTA)
+# Download the sheep (Ovis aries) (or organism of interest) reference genome (FASTA)
 wget https://ftp.ensembl.org/pub/release-116/fasta/ovis_aries/dna/Ovis_aries.ARS-UI_Ramb_v3.0.dna.toplevel.fa.gz
 
-# Download the sheep (Ovis aries) GTF annotation file
+# Download the sheep (Ovis aries) (or organism of interest) GTF annotation file
 wget https://ftp.ensembl.org/pub/release-116/gtf/ovis_aries/Ovis_aries.ARS-UI_Ramb_v3.0.116.gtf.gz
 
 # Uncompress both files

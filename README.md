@@ -11,7 +11,7 @@ downstream analysis was performed in R using Seurat.
 
 ### 1. Raw Data Processing (PIPseeker)
 - Alignment and UMI counting performed with PIPseeker (Illumina DRAGEN)
-- Selected the best sensitivity filtered count matrix for downstream analysis count matrix for
+- Select the best sensitivity filtered count matrix for downstream analysis count matrix for
   downstream analysis based on knee plot, cell counts or your reasoning.
 
 ### 2. Downstream Analysis (Seurat)

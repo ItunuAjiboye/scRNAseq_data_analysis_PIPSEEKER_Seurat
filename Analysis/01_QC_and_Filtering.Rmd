@@ -1,1 +1,360 @@
+---
+title: "QC and Filtering"
+author: "ItunuBabatunmise"
+date: "2026-05-22"
+output: html_document
+---
 
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+# Load libraries
+library(SingleCellExperiment)
+library(Seurat)
+library(tidyverse)
+library(Matrix)
+library(scales)
+library(cowplot)
+library(RCurl)
+```
+
+```{r}
+# Create output directories if they don't exist
+dir.create("results/figures", recursive = TRUE, showWarnings = FALSE)
+```
+
+```{r}
+# Read in all the samples
+# Get all folders inside the data directory
+data_dirs <- list.dirs("Data", recursive = FALSE)
+
+# Create an empty list to store Seurat objects
+seurat_list <- list()
+
+# Loop through each folder
+for (dir_path in data_dirs) {
+  
+  sample_name <- basename(dir_path)
+  
+  # Read the matrix
+  mtx_obj <- ReadMtx(
+    mtx = file.path(dir_path, "matrix.mtx.gz"),
+    features = file.path(dir_path, "features.tsv.gz"),
+    cells = file.path(dir_path, "barcodes.tsv.gz")
+  )
+  
+  # Create Seurat object
+  seurat_obj <- CreateSeuratObject(counts = mtx_obj, project = sample_name)
+  
+  # Store using folder name as list key
+  seurat_list[[sample_name]] <- seurat_obj
+  
+  cat("Processed:", sample_name, "\n")
+}
+```
+
+```{r}
+# Check metadata for each sample
+head(seurat_list[["S1"]]@meta.data)
+head(seurat_list[["S2"]]@meta.data)
+head(seurat_list[["S3"]]@meta.data)
+head(seurat_list[["S4"]]@meta.data)
+head(seurat_list[["S5"]]@meta.data)
+```
+
+```{r}
+# Create a merged Seurat object to combine all samples
+merged_seurat <- merge(
+  x = seurat_list[[1]],
+  y = seurat_list[-1],
+  add.cell.ids = c("S1", "S2", "S3", "S4", "S5")
+)
+```
+
+```{r}
+# Check that the merged object has the appropriate sample-specific prefixes
+head(merged_seurat@meta.data)
+tail(merged_seurat@meta.data)
+```
+
+# Metadata fields:
+# orig.ident: sample identity (defaults to project name)
+# nCount_RNA: number of UMIs per cell
+# nFeature_RNA: number of genes detected per cell
+
+```{r}
+# Explore merged metadata
+View(merged_seurat@meta.data)
+```
+
+# Generating Quality Metrics
+```{r}
+# Compute percent mito ratio
+merged_seurat$mitoRatio <- PercentageFeatureSet(object = merged_seurat, pattern = "^MT-")
+merged_seurat$mitoRatio <- merged_seurat@meta.data$mitoRatio / 100
+```
+
+```{r}
+# Create metadata dataframe
+metadata <- merged_seurat@meta.data
+
+# Add cell IDs to metadata
+metadata$cells <- rownames(metadata)
+
+# Rename columns
+metadata <- metadata %>%
+  dplyr::rename(
+    seq_folder = orig.ident,
+    nUMI = nCount_RNA,
+    nGene = nFeature_RNA
+  )
+```
+# Additional Metrics
+# Number of genes detected per UMI. Add number of genes per UMI for each cell to metadata
+```{r}
+# This metric gives an idea of the complexity of the dataset
+# (more genes detected per UMI = more complex data)
+metadata$log10GenesPerUMI <- log10(metadata$nGene) / log10(metadata$nUMI)
+```
+
+```{r}
+# Create sample column- to reduce the long sample name to S1...
+metadata$sample <- NA
+metadata$sample[which(str_detect(metadata$cells, "^S1_"))] <- "S1"
+metadata$sample[which(str_detect(metadata$cells, "^S2_"))] <- "S2"
+metadata$sample[which(str_detect(metadata$cells, "^S3_"))] <- "S3"
+metadata$sample[which(str_detect(metadata$cells, "^S4_"))] <- "S4"
+metadata$sample[which(str_detect(metadata$cells, "^S5_"))] <- "S5"
+```
+
+```{r}
+# Add metadata back to Seurat object
+merged_seurat@meta.data <- metadata
+
+# Save merged Seurat object
+save(merged_seurat, file = "Data/merged_filtered_seurat.RData")
+```
+
+# Cell Counts
+Unique cellular barcodes detected per sample.
+
+```{r}
+p <- metadata %>%
+  ggplot(aes(x = sample, fill = sample)) +
+  geom_bar() +
+  theme_classic() +
+  theme(
+    axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1),
+    plot.title = element_text(hjust = 0.5, face = "bold")
+  ) +
+  ggtitle("Number of Cells")
+
+ggsave("results/figures/number_of_cells.pdf", plot = p, width = 8, height = 6)
+p
+```
+
+# UMI Counts (Transcripts) per Cell
+
+```{r}
+p <- metadata %>%
+  ggplot(aes(color = sample, x = nUMI, fill = sample)) +
+  geom_density(alpha = 0.2) +
+  scale_x_log10() +
+  theme_classic() +
+  ylab("Cell density") +
+  geom_vline(xintercept = 500) +
+  ggtitle("Distribution of UMIs per Cell")
+
+ggsave("results/figures/UMI_density_per_cell.pdf", plot = p, width = 8, height = 6)
+p
+```
+
+# Genes Detected per Cell
+
+```{r}
+p1 <- metadata %>%
+  ggplot(aes(color = sample, x = nGene, fill = sample)) +
+  geom_density(alpha = 0.2) +
+  theme_classic() +
+  scale_x_log10() +
+  geom_vline(xintercept = 4000) +
+  ylab("Cell density") +
+  ggtitle("Distribution of Genes Detected per Cell")
+
+ggsave("results/figures/gene_density_per_cell.pdf", plot = p1, width = 8, height = 6)
+p1
+```
+
+```{r}
+p2 <- metadata %>%
+  ggplot(aes(x = sample, y = log10(nGene), fill = sample)) +
+  geom_boxplot() +
+  theme_classic() +
+  theme(
+    axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1),
+    plot.title = element_text(hjust = 0.5, face = "bold")
+  ) +
+  ggtitle("NCells vs NGenes")
+
+ggsave("results/figures/nCells_vs_nGenes_boxplot.pdf", plot = p2, width = 8, height = 6)
+p2
+```
+
+# UMIs vs. Genes Detected
+
+```{r}
+p <- metadata %>%
+  ggplot(aes(x = nUMI, y = nGene)) +
+  geom_point(alpha = 0.5) +
+  stat_smooth(method = lm, color = "red") +
+  scale_x_log10() +
+  scale_y_log10() +
+  theme_classic() +
+  geom_vline(xintercept = 500) +
+  geom_hline(yintercept = 250) +
+  facet_wrap(~sample) +
+  ggtitle("Correlation Between UMIs and Genes Detected")
+
+ggsave("results/figures/UMI_vs_Genes_correlation.pdf", plot = p, width = 10, height = 8)
+p
+```
+```{r}
+# Mitochondrial Counts Ratio
+p <- metadata %>%
+  ggplot(aes(color = sample, x = mitoRatio, fill = sample)) +
+  geom_density(alpha = 0.2) +
+  scale_x_log10() +
+  theme_classic() +
+  geom_vline(xintercept = 0.2) +       
+  ylab("Cell density") +
+  ggtitle("Mitochondrial Counts Ratio")  
+ggsave("results/figures/Mitochondrial_counts_ratio.pdf", plot = p, width = 10, height = 8)
+p
+```
+# Complexity
+visualizing the genes detected per UMI
+```{r}
+p <- metadata %>%
+  ggplot(aes(x = log10GenesPerUMI, color = sample, fill = sample)) +
+  geom_density(alpha = 0.2) +
+  theme_classic() +
+  geom_vline(xintercept = 0.8) +
+  ylab("Cell density") +
+  ggtitle("Gene Expression Complexity per Cell")
+
+ggsave("results/figures/genes_per_UMI_complexity.pdf", plot = p, width = 8, height = 6)
+p
+```
+
+# Gene Level Filtering
+Removing genes with zero expression across all cells and genes expressed
+in fewer than 10 cells, as these reduce average expression without adding
+meaningful information.
+
+```{r}
+# View the layers in your data
+Layers(merged_seurat)
+```
+```{r}
+# Join layers before filtering
+merged_seurat <- JoinLayers(merged_seurat)
+
+# Extract counts
+counts <- GetAssayData(object = merged_seurat, layer = "counts")
+
+# Keep genes expressed in 10 or more cells
+keep_genes <- Matrix::rowSums(counts > 0) >= 10
+
+# Subset Seurat object
+merged_seurat <- subset(
+  merged_seurat,
+  features = rownames(counts)[keep_genes]
+)
+```
+
+```{r}
+# Save filtered Seurat object
+save(merged_seurat, file = "Data/seurat_filteredQC.RData")
+```
+
+# Re-assess QC Metrics After Filtering
+
+```{r}
+metadata_clean <- merged_seurat@meta.data
+```
+
+```{r}
+# Visualize the number of cell counts per sample
+p <- metadata_clean %>%
+  ggplot(aes(x = sample, fill = sample)) +
+  geom_bar() +
+  theme_classic() +
+  theme(
+    axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1),
+    plot.title = element_text(hjust = 0.5, face = "bold")
+  ) +
+  ggtitle("NCells After Filtering")
+
+ggsave("results/figures/post_filter_ncells.pdf", plot = p, width = 8, height = 6)
+p
+```
+
+```{r}
+# Visualize the number UMIs/transcripts per cell
+p <- metadata_clean %>%
+  ggplot(aes(color = sample, x = nUMI, fill = sample)) +
+  geom_density(alpha = 0.2) +
+  scale_x_log10() +
+  theme_classic() +
+  ylab("Cell density") +
+  geom_vline(xintercept = 500) +
+  ggtitle("UMI Density After Filtering")
+
+ggsave("results/figures/post_filter_UMI_density.pdf", plot = p, width = 8, height = 6)
+p
+```
+
+```{r}
+# Visualize the distribution of genes detected per cell via histogram
+p1 <- metadata_clean %>%
+  ggplot(aes(color = sample, x = nGene, fill = sample)) +
+  geom_density(alpha = 0.2) +
+  theme_classic() +
+  scale_x_log10() +
+  geom_vline(xintercept = 300) +
+  ggtitle("Gene Density After Filtering")
+
+ggsave("results/figures/post_filter_gene_density.pdf", plot = p1, width = 8, height = 6)
+p1
+```
+
+```{r}
+#Visualize the distribution of genes detected per cell via boxplot
+p2 <- metadata_clean %>%
+  ggplot(aes(x = sample, y = log10(nGene), fill = sample)) +
+  geom_boxplot() +
+  theme_classic() +
+  theme(
+    axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1),
+    plot.title = element_text(hjust = 0.5, face = "bold")
+  ) +
+  ggtitle("NCells vs NGenes After Filtering")
+
+ggsave("results/figures/post_filter_nCells_vs_nGenes.pdf", plot = p2, width = 8, height = 6)
+p2
+```
+
+```{r}
+# Visualize the overall complexity
+p <- metadata_clean %>%
+  ggplot(aes(x = log10GenesPerUMI, color = sample, fill = sample)) +
+  geom_density(alpha = 0.2) +
+  theme_classic() +
+  geom_vline(xintercept = 0.8) +
+  ggtitle("Complexity After Filtering")
+
+ggsave("results/figures/post_filter_complexity.pdf", plot = p, width = 8, height = 6)
+p
+```
